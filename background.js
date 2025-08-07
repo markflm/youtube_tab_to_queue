@@ -7,10 +7,10 @@ chrome.action.onClicked.addListener(async (activeTab) => {
     const otherYoutubeTabs = allTabs.filter(tab => !tab.active);
 
     const videoIds = otherYoutubeTabs.map(tab => {
-      // Extract the video ID from the URL (e.g., "v=ID")
+      // extract the video ID from the URL (e.g., "v=ID")
       const url = new URL(tab.url);
       return url.searchParams.get("v");
-    }).filter(id => id); // Filter out any tabs without a video ID
+    }).filter(id => id); // filter out any tabs without a video ID
 
     if (videoIds.length > 0) {
       await chrome.tabs.sendMessage(activeYoutubeTab.id, {
@@ -19,6 +19,7 @@ chrome.action.onClicked.addListener(async (activeTab) => {
       });
     }
 
+    // todo - re-enable tab close
     const tabIdsToRemove = otherYoutubeTabs.map(tab => tab.id);
     await chrome.tabs.remove(tabIdsToRemove);
   }
