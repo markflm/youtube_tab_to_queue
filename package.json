@@ -1,0 +1,11 @@
+{
+  "name": "youtube_tab_to_queue",
+  "version": "1.0.0",
+  "description": "Chrome add-on to convert open YouTube tabs to a single YouTube video queue",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "markflm",
+  "license": "ISC"
+}

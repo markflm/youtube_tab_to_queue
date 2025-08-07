@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Queue",
+  "version": "1.0",
+  "description": "Collapses all YouTube tabs into a single queue.",
+  "permissions": ["tabs"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icon.png"
+    }
+    
+  },
+    "host_permissions": [
+    "https://*.google.com/",
+    "https://*.youtube.com/*"
+  ],
+    "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
