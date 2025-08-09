@@ -19,7 +19,6 @@ chrome.action.onClicked.addListener(async (activeTab) => {
       });
     }
 
-    // todo - re-enable tab close
     const tabIdsToRemove = otherYoutubeTabs.map(tab => tab.id);
     await chrome.tabs.remove(tabIdsToRemove);
   }
