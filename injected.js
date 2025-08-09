@@ -1,3 +1,4 @@
+// pull values unique to user from the page
 if (window.ytcfg && typeof window.ytcfg.get === 'function') {
     const visitorData = window.ytcfg.get('VISITOR_DATA');
     const hl = window.ytcfg.get('HL')

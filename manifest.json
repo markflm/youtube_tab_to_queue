@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Queue",
+  "name": "YouTube Tabs2Queue",
   "version": "1.0",
-  "description": "Collapses all YouTube tabs into a single queue.",
+  "description": "Collapses all open YouTube tabs into a single queue.",
   "permissions": ["tabs"],
   "background": {
     "service_worker": "background.js"
