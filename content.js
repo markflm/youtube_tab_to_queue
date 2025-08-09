@@ -9,12 +9,19 @@ function injectScript(file_path, tag) {
 // Inject script to run in the page's context
 injectScript(chrome.runtime.getURL('injected.js'), 'body');
 let googVisitorId;
+let clientVersion;
+let hl
+let gl;
 
 // Listen for the custom event from the injected script
-window.addEventListener("visitorDataEvent", function (event) {
-    if (event.detail && event.detail.visitorData) {
-        console.log("Found VISITOR_DATA:", event.detail.visitorData);
+window.addEventListener("pageValues", function (event) {
+    if (event.detail) {
+        console.log("Received page values:", event.detail);
         googVisitorId = event.detail.visitorData;
+        clientVersion = event.detail.clientVersion;
+        hl = event.detail.hl;
+        gl = event.detail.gl;
+
     }
 });
 
@@ -118,34 +125,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             fetch("https://www.youtube.com/youtubei/v1/browse/edit_playlist?prettyPrint=false", {
                 "headers": {
                     "accept": "*/*",
-                    "accept-language": "en-US,en;q=0.9",
-                    // doesn't seem necessary, but leaving it commented out for now
-                    // "authorization": "="",
                     "cache-control": "no-cache",
                     "content-type": "application/json",
                     "pragma": "no-cache",
                     "priority": "u=1, i",
-                    "sec-ch-ua": "\"Google Chrome\";v=\"137\", \"Chromium\";v=\"137\", \"Not/A)Brand\";v=\"24\"",
-                    "sec-ch-ua-arch": "\"arm\"",
-                    "sec-ch-ua-bitness": "\"64\"",
-                    "sec-ch-ua-form-factors": "\"Desktop\"",
-                    "sec-ch-ua-full-version": "\"137.0.7151.121\"",
-                    "sec-ch-ua-full-version-list": "\"Google Chrome\";v=\"137.0.7151.121\", \"Chromium\";v=\"137.0.7151.121\", \"Not/A)Brand\";v=\"24.0.0.0\"",
-                    "sec-ch-ua-mobile": "?0",
-                    "sec-ch-ua-model": "\"\"",
-                    "sec-ch-ua-platform": "\"macOS\"",
-                    "sec-ch-ua-platform-version": "\"15.5.0\"",
-                    "sec-ch-ua-wow64": "?0",
-                    "sec-fetch-dest": "empty",
                     "sec-fetch-mode": "same-origin",
                     "sec-fetch-site": "same-origin",
-                    // "x-client-data": "CIe2yQEIpbbJAQipncoBCNH2ygEIlKHLAQiGoM0BCP2lzgEI3dbOAQij8s4BCJL2zgEImPfOARjQ+s4B",
                     "x-goog-authuser": "1",
                     "x-goog-visitor-id": googVisitorId,
                     "x-origin": "https://www.youtube.com",
-                    "x-youtube-bootstrap-logged-in": "true",
-                    "x-youtube-client-name": "1",
-                    "x-youtube-client-version": "2.20250803.10.00"
+                    "x-youtube-client-version": request.clientVersion || "2.20250803.10.00",
                 },
                 "referrer": "https://www.youtube.com/watch?v=g_NrnWD9wVw",
                 "referrerPolicy": "origin-when-cross-origin",
@@ -153,15 +142,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     "context": {
                         //will want to replace every part of the client object with the actual values
                         "client": {
-                            "hl": "en",
-                            "gl": "US",
-                            "deviceMake": "Apple",
-                            "deviceModel": "",
-                            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36,gzip(gfe)",
+                            "hl": hl,
+                            "gl": gl,
                             "clientName": "WEB",
-                            "clientVersion": "2.20250803.10.00",
-                            "osName": "Macintosh",
-                            "osVersion": "10_15_7",
+                            "clientVersion": request.clientVersion || "2.20250803.10.00", // hard required
                             "originalUrl": "https://www.youtube.com/watch?v=g_NrnWD9wVw",
                             "acceptHeader": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
                         },
