@@ -26,35 +26,35 @@ window.addEventListener("pageValues", function (event) {
 
     }
 });
-    // helper function to wait for an element to appear in the DOM
-    async function waitForElement(selector, getAll = false, timeout = 1000) {
-        return new Promise((resolve, reject) => {
+// helper function to wait for an element to appear in the DOM
+async function waitForElement(selector, getAll = false, timeout = 1000) {
+    return new Promise((resolve, reject) => {
+        const elements = document.querySelectorAll(selector);
+        if (elements.length) {
+            resolve(getAll ? elements : elements[0]);
+            return;
+        }
+
+        const observer = new MutationObserver((mutations) => {
             const elements = document.querySelectorAll(selector);
             if (elements.length) {
-                resolve(getAll ? elements : elements[0]);
-                return;
-            }
-
-            const observer = new MutationObserver((mutations) => {
-                const elements = document.querySelectorAll(selector);
-                if (elements.length) {
-                    observer.disconnect();
-                    resolve(getAll ? elements : elements[0]);
-                }
-            });
-
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-
-            // Timeout after specified duration
-            setTimeout(() => {
                 observer.disconnect();
-                reject(new Error(`Element ${selector} not found within ${timeout}ms`));
-            }, timeout);
+                resolve(getAll ? elements : elements[0]);
+            }
         });
-    }
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        // Timeout after specified duration
+        setTimeout(() => {
+            observer.disconnect();
+            reject(new Error(`Element ${selector} not found within ${timeout}ms`));
+        }, timeout);
+    });
+}
 
 async function createInitialQueuePlaylist() {
 
@@ -74,7 +74,7 @@ async function createInitialQueuePlaylist() {
             // Step 2: Wait for menu to appear and click "Add to queue"
             const addToQueueButton = await waitForElement(`
 [role="menuitem"][tabindex="0"]
-            `.trim());∂
+            `.trim());
             addToQueueButton.click();
 
             // Step 3: wait for 2nd video in the new queue to appear; this is where we can get the queue ID
@@ -86,23 +86,23 @@ async function createInitialQueuePlaylist() {
                 throw new Error("Queue video element not found or does not have a valid href.");
             }
 
-            try{
-            // maybe more brittle than the css selector but w/e
-            const xpath = "/html/body/ytd-app/div[1]/ytd-page-manager/ytd-watch-flexy/div[5]/div[2]/div/ytd-playlist-panel-renderer/div/div[3]/ytd-playlist-panel-video-renderer[2]/div/ytd-menu-renderer/yt-icon-button/button";
+            try {
+                // maybe more brittle than the css selector but w/e
+                const xpath = "/html/body/ytd-app/div[1]/ytd-page-manager/ytd-watch-flexy/div[5]/div[2]/div/ytd-playlist-panel-renderer/div/div[3]/ytd-playlist-panel-video-renderer[2]/div/ytd-menu-renderer/yt-icon-button/button";
 
-            const result = document.evaluate(
-                xpath,
-                document,
-                null,
-                XPathResult.FIRST_ORDERED_NODE_TYPE,
-                null
-            );
-            secondVideoInQueue3DotElement = result.singleNodeValue;
-        }
-        catch (error) {
-            console.error("Error finding second video in queue 3-dot element:", error);
-            secondVideoInQueue3DotElement = null;
-        }
+                const result = document.evaluate(
+                    xpath,
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                );
+                secondVideoInQueue3DotElement = result.singleNodeValue;
+            }
+            catch (error) {
+                console.error("Error finding second video in queue 3-dot element:", error);
+                secondVideoInQueue3DotElement = null;
+            }
 
             return getListId(queueVideoElement.href);
 
@@ -179,19 +179,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 "mode": "cors",
                 "credentials": "include"
             }).then(async (_) => {
-                    if (secondVideoInQueue3DotElement) {
-                        setTimeout(() => { secondVideoInQueue3DotElement.click() }, 1000);
-                        const removeFromPlaylistBtn = await waitForElement('ytd-menu-service-item-renderer[role="menuitem"]:nth-of-type(3)', false, 5000);
-                        if (removeFromPlaylistBtn) {
-                            removeFromPlaylistBtn.click();
-                        } else {
-                            console.warn("Could not locate the 'Remove from playlist' button. Performing a hard refresh");
-                            window.location.reload();
-                        }
+                if (secondVideoInQueue3DotElement) {
+                    setTimeout(() => { secondVideoInQueue3DotElement.click() }, 1000);
+                    const removeFromPlaylistBtn = await waitForElement('ytd-menu-service-item-renderer[role="menuitem"]:nth-of-type(3)', false, 5000);
+                    if (removeFromPlaylistBtn) {
+                        removeFromPlaylistBtn.click();
                     } else {
-                        console.error("Second video in queue 3-dot element not found.");
+                        console.warn("Could not locate the 'Remove from playlist' button. Performing a hard refresh");
+                        window.location.reload();
                     }
+                } else {
+                    console.error("Second video in queue 3-dot element not found.");
                 }
+            }
             ).catch((error) => {
                 console.error("Error creating playlist:", error);
             });
