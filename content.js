@@ -7,7 +7,7 @@ function injectScript(file_path, tag) {
 }
 
 // inject script to run in the page's context
-injectScript(chrome.runtime.getURL('injected.js'), 'body');
+injectScript(chrome.runtime.getURL('activeTabInjected.js'), 'body');
 
 // global vars to hold page-specific values
 let googVisitorId;
