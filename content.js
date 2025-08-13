@@ -132,6 +132,7 @@ async function createInitialQueuePlaylist() {
                 finalVideoInQueue3DotElement = null;
             }
 
+            await timeoutHack(2000); // wait a bit to ensure the href is fully updated
             return getListId(queueVideoElement.href);
 
         } catch (error) {
@@ -228,8 +229,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 console.error("Error creating playlist:", error);
             }).finally(() => {
             console.log("Resetting volatile variables after processing request");
-           finalVideoInQueue3DotElement = null;
-        });;
+            finalVideoInQueue3DotElement = null;
+           
+        });
         }).catch((error) => {
             console.error("Error creating queue:", error);
             sendResponse({ status: "error", message: error.message });
