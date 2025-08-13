@@ -15,7 +15,7 @@ let clientVersion;
 let hl
 let gl;
 let finalVideoInQueue3DotElement;
-let newQueue = true;
+
 // listen for the custom event from the injected script
 window.addEventListener("pageValues", function (event) {
     if (event.detail) {
@@ -75,7 +75,7 @@ async function createInitialQueuePlaylist() {
             //#contents is a valid CSS ID selector that targets a specific element with the id="contents".
 
             //Step 0: check if a queue already exists
-            const originalQueueVideoElements = await waitForElement(`
+         const originalQueueVideoElements = await waitForElement(`
                 a#wc-endpoint[href]
             `.trim(), true, 1000).catch((error) => {
                 console.warn("No existing queue found");
@@ -83,38 +83,23 @@ async function createInitialQueuePlaylist() {
             });
             console.debug("Queue video elements found:", originalQueueVideoElements);
 
-            // hack - sleep for 3 seconds if there were already queue videos present. Give the added video time to appear so the xpath finds the right one
-            if (originalQueueVideoElements.length <= 1) {
-                newQueue = true;
-                console.debug("No pre-existing queue detected - creating a new queue...");
-                // Step 1: Find and click the more actions button
-                const moreActionsButton = await waitForElement(`
+            // Step 1: Find and click the more actions button
+            const moreActionsButton = await waitForElement(`
                 #items button[aria-label="More actions"],
                 #items button.yt-spec-button-shape-next--icon-button[aria-label="More actions"],
                 #items button[aria-label="More actions"][class*="yt-spec-button-shape-next"]
             `.trim());
 
-                // Find the first parent <a> element
-                const parentAnchor = moreActionsButton.closest('a');
-                console.debug("Parent anchor element:", parentAnchor);
+            moreActionsButton.click();
 
-                moreActionsButton.click();
 
-                // Step 2: Wait for menu to appear and click "Add to queue"
-                const addToQueueButton = await waitForElement(`
+            // Step 2: Wait for menu to appear and click "Add to queue"
+            const addToQueueButton = await waitForElement(`
 [role="menuitem"][tabindex="0"]
             `.trim(), false, 3000);
-                console.debug("Add to Queue button found:", addToQueueButton);
-                addToQueueButton.click();
-            }
-            else {
-                newQueue = false;
-                console.debug("Pre-existing queue detected - adding to existing queue...");
-            }
-
-
-
-
+            console.debug("Add to Queue button found:", addToQueueButton);
+            addToQueueButton.click();
+            
             // Step 3: wait for 2nd video in the new queue to appear; this is where we can get the queue ID
             const queueVideoElement = await waitForElement(`
                 a#wc-endpoint[href]
@@ -122,6 +107,12 @@ async function createInitialQueuePlaylist() {
 
             if (!queueVideoElement?.href) {
                 throw new Error("Queue video element not found or does not have a valid href.");
+            }
+
+            // hack - sleep for 3 seconds if there were already queue videos present. Give the added video time to appear so the xpath finds the right one
+            if (originalQueueVideoElements.length >= 1) {
+                console.debug("Pre-existing queue detected - waiting 3 seconds for the queue to update...");
+                await new Promise(resolve => setTimeout(resolve, 3000));
             }
 
             try {
@@ -205,7 +196,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             "useSsl": true
                         }
                     },
-                    "actions":
+                    "actions": 
                         [...new Set(request.videos)].map(videoId => ({
                             "addedVideoId": videoId,
                             "action": "ACTION_ADD_VIDEO"
@@ -217,28 +208,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 "mode": "cors",
                 "credentials": "include"
             }).then(async (_) => {
-                window.location.reload();
-                await timeoutHack(2500)
-                if (newQueue) {
-                    console.debug("New queue created, need to remove the video we used to create the queue");
-                    // new queue, need to look for video we added to create the queue
-                    const newQueueVideoElement = await waitForElement(`
-                        a#wc-endpoint[href*="${newQueueId}"]
-                    `.trim(), false, 5000);
-                    if (!newQueueVideoElement) {
-                        throw new Error("New queue video element not found after creating playlist.");
+                if (finalVideoInQueue3DotElement) {
+                    finalVideoInQueue3DotElement.click()
+                    await timeoutHack(3000);
+                    const removeFromPlaylistBtn = await waitForElement('ytd-menu-service-item-renderer[role="menuitem"]:nth-of-type(3)', false, 6000);
+                    console.debug("Remove from playlist button found:", removeFromPlaylistBtn);
+                    if (removeFromPlaylistBtn) {
+                        await timeoutHack(1500);
+                        removeFromPlaylistBtn.click();
+                    } else {
+                        console.warn("Could not locate the 'Remove from playlist' button. Performing a hard refresh");
+                        window.location.reload();
                     }
-                    console.debug("New queue video element found:", newQueueVideoElement);
-                    finalVideoInQueue3DotElement = newQueueVideoElement;
+                } else {
+                    console.error("Second video in queue 3-dot element not found.");
                 }
-
             }
             ).catch((error) => {
                 console.error("Error creating playlist:", error);
             }).finally(() => {
-                console.log("Resetting volatile variables after processing request");
-                finalVideoInQueue3DotElement = null;
-            });;
+            console.log("Resetting volatile variables after processing request");
+           finalVideoInQueue3DotElement = null;
+        });;
         }).catch((error) => {
             console.error("Error creating queue:", error);
             sendResponse({ status: "error", message: error.message });
