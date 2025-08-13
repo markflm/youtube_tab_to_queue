@@ -14,7 +14,7 @@ let googVisitorId;
 let clientVersion;
 let hl
 let gl;
-let finalVideoInQueue3DotElement;
+let finalVideoInQueue;
 
 // listen for the custom event from the injected script
 window.addEventListener("pageValues", function (event) {
@@ -75,7 +75,7 @@ async function createInitialQueuePlaylist() {
             //#contents is a valid CSS ID selector that targets a specific element with the id="contents".
 
             //Step 0: check if a queue already exists
-         const originalQueueVideoElements = await waitForElement(`
+            const originalQueueVideoElements = await waitForElement(`
                 a#wc-endpoint[href]
             `.trim(), true, 1000).catch((error) => {
                 console.warn("No existing queue found");
@@ -85,9 +85,9 @@ async function createInitialQueuePlaylist() {
 
             // Step 1: Find and click the more actions button
             const moreActionsButton = await waitForElement(`
-                #items button[aria-label="More actions"],
-                #items button.yt-spec-button-shape-next--icon-button[aria-label="More actions"],
-                #items button[aria-label="More actions"][class*="yt-spec-button-shape-next"]
+                #contents #items button[aria-label="More actions"],
+                #contents #items button.yt-spec-button-shape-next--icon-button[aria-label="More actions"],
+                #contents #items button[aria-label="More actions"][class*="yt-spec-button-shape-next"]
             `.trim());
 
             moreActionsButton.click();
@@ -99,7 +99,7 @@ async function createInitialQueuePlaylist() {
             `.trim(), false, 3000);
             console.debug("Add to Queue button found:", addToQueueButton);
             addToQueueButton.click();
-            
+
             // Step 3: wait for 2nd video in the new queue to appear; this is where we can get the queue ID
             const queueVideoElement = await waitForElement(`
                 a#wc-endpoint[href]
@@ -125,11 +125,11 @@ async function createInitialQueuePlaylist() {
                     XPathResult.FIRST_ORDERED_NODE_TYPE,
                     null
                 );
-                finalVideoInQueue3DotElement = result.singleNodeValue;
+                finalVideoInQueue = result.singleNodeValue;
             }
             catch (error) {
                 console.error("Error finding final video in queue 3-dot element:", error);
-                finalVideoInQueue3DotElement = null;
+                finalVideoInQueue = null;
             }
 
             await timeoutHack(2000); // wait a bit to ensure the href is fully updated
@@ -158,86 +158,218 @@ function getListId(url) {
     return url.substring(start + 6, end);
 }
 
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "addToQueue") {
-        createInitialQueuePlaylist().then((newQueueId) => {
-            console.debug("New queue ID created:", newQueueId);
-            fetch("https://www.youtube.com/youtubei/v1/browse/edit_playlist?prettyPrint=false", {
-                "headers": {
-                    "accept": "*/*",
-                    "cache-control": "no-cache",
-                    "content-type": "application/json",
-                    "pragma": "no-cache",
-                    "priority": "u=1, i",
-                    "sec-fetch-mode": "same-origin",
-                    "sec-fetch-site": "same-origin",
-                    "x-goog-authuser": "1",
-                    "x-goog-visitor-id": googVisitorId,
-                    "x-origin": "https://www.youtube.com",
-                    "x-youtube-client-version": request.clientVersion || "2.20250803.10.00",
+async function makeEditCall(playlistId, videoIds, request) {
+    return fetch("https://www.youtube.com/youtubei/v1/browse/edit_playlist?prettyPrint=false", {
+        "headers": {
+            "accept": "*/*",
+            "cache-control": "no-cache",
+            "content-type": "application/json",
+            "pragma": "no-cache",
+            "priority": "u=1, i",
+            "sec-fetch-mode": "same-origin",
+            "sec-fetch-site": "same-origin",
+            "x-goog-authuser": "1",
+            "x-goog-visitor-id": googVisitorId,
+            "x-origin": "https://www.youtube.com",
+            "x-youtube-client-version": request.clientVersion || "2.20250803.10.00",
+        },
+        "referrer": "https://www.youtube.com",
+        "referrerPolicy": "origin-when-cross-origin",
+        "body": JSON.stringify({
+            "context": {
+                //will want to replace every part of this client object with the actual values where possible
+                "client": {
+                    "hl": hl,
+                    "gl": gl,
+                    "clientName": "WEB",
+                    "clientVersion": request.clientVersion || "2.20250803.10.00", // hard required
+                    "originalUrl": "https://www.youtube.com/watch?v=g_NrnWD9wVw",
+                    "acceptHeader": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
                 },
-                "referrer": "https://www.youtube.com",
-                "referrerPolicy": "origin-when-cross-origin",
-                "body": JSON.stringify({
-                    "context": {
-                        //will want to replace every part of this client object with the actual values where possible
-                        "client": {
-                            "hl": hl,
-                            "gl": gl,
-                            "clientName": "WEB",
-                            "clientVersion": request.clientVersion || "2.20250803.10.00", // hard required
-                            "originalUrl": "https://www.youtube.com/watch?v=g_NrnWD9wVw",
-                            "acceptHeader": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                        },
-                        "user": {
-                            "lockedSafetyMode": false
-                        },
-                        "request": {
-                            "useSsl": true
-                        }
-                    },
-                    "actions": 
-                        [...new Set(request.videos)].map(videoId => ({
-                            "addedVideoId": videoId,
-                            "action": "ACTION_ADD_VIDEO"
-                        }))
-                    ,
-                    "playlistId": newQueueId
-                }),
-                "method": "POST",
-                "mode": "cors",
-                "credentials": "include"
-            }).then(async (_) => {
-                if (finalVideoInQueue3DotElement) {
-                    finalVideoInQueue3DotElement.click()
-                    await timeoutHack(3000);
-                    const removeFromPlaylistBtn = await waitForElement('ytd-menu-service-item-renderer[role="menuitem"]:nth-of-type(3)', false, 6000);
-                    console.debug("Remove from playlist button found:", removeFromPlaylistBtn);
-                    if (removeFromPlaylistBtn) {
-                        await timeoutHack(1500);
-                        removeFromPlaylistBtn.click();
-                    } else {
-                        console.warn("Could not locate the 'Remove from playlist' button. Performing a hard refresh");
-                        window.location.reload();
-                    }
-                } else {
-                    console.error("Second video in queue 3-dot element not found.");
+                "user": {
+                    "lockedSafetyMode": false
+                },
+                "request": {
+                    "useSsl": true
                 }
-            }
-            ).catch((error) => {
-                console.error("Error creating playlist:", error);
-            }).finally(() => {
-            console.log("Resetting volatile variables after processing request");
-            finalVideoInQueue3DotElement = null;
-           
+            },
+            "actions":
+                [...new Set(request.videos)].map(videoId => ({
+                    "addedVideoId": videoId,
+                    "action": "ACTION_ADD_VIDEO"
+                }))
+            ,
+            "playlistId": playlistId
+        }),
+        "method": "POST",
+        "mode": "cors",
+        "credentials": "include"
+    })
+}
+
+
+chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
+    if (request.action === "addToQueue") {
+        let playlistId = null;
+        //do we have a valid queue already?
+        //Step 0: check if a queue already exists
+        const originalQueueVideoElements = await waitForElement(`
+                a#wc-endpoint[href]
+            `.trim(), true, 1000).catch((error) => {
+            console.warn("No existing queue found");
+            return [];
         });
-        }).catch((error) => {
-            console.error("Error creating queue:", error);
-            sendResponse({ status: "error", message: error.message });
-        })
-    }
-    else {
-        console.error("Unknown action received in content script:", request.action);
+        console.debug("Queue video elements found:", originalQueueVideoElements);
+
+        if (originalQueueVideoElements.length >= 1) {
+            console.debug("Pre-existing queue detected - getting queue ID");
+            const queueVideoElement = await waitForElement(`
+                a#wc-endpoint[href]
+            `.trim(), false, 5000);
+
+            if (!queueVideoElement?.href) {
+                throw new Error("Queue video element not found or does not have a valid href.");
+            }
+            playlistId = getListId(queueVideoElement.href);
+            await makeEditCall(playlistId, request.videos, request).catch((error) => {
+                console.error("Error adding videos to existing queue:", error);
+            });
+
+            // Step 1: Find and click the more actions button
+            const moreActionsButton = await waitForElement(`
+                yt-lockup-metadata-view-model button[aria-label="More actions"],
+                yt-lockup-metadata-view-model button.yt-spec-button-shape-next--icon-button[aria-label="More actions"],
+                yt-lockup-metadata-view-model button[aria-label="More actions"][class*="yt-spec-button-shape-next"]
+            `.trim());
+
+            moreActionsButton.click();
+
+
+            // Step 2: Wait for menu to appear and click "Add to queue"
+            const addToQueueButton = await waitForElement(`
+[role="menuitem"][tabindex="0"]
+            `.trim(), false, 3000);
+            console.debug("Add to Queue button found:", addToQueueButton);
+            addToQueueButton.click();
+            console.debug("3 second timeout hack")
+            await timeoutHack(3000); // wait a bit to ensure the added video has appeared
+
+            try {
+                // maybe more brittle than the css selector but w/e
+                const xpath = "/html/body/ytd-app/div[1]/ytd-page-manager/ytd-watch-flexy/div[5]/div[2]/div/ytd-playlist-panel-renderer/div/div[3]/ytd-playlist-panel-video-renderer[last()]";
+                const result = document.evaluate(
+                    xpath,
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                );
+                finalVideoInQueue = result.singleNodeValue;
+                console.log("Final video in queue found:", finalVideoInQueue);
+            }
+            catch (error) {
+                console.error("Error finding final video in queue:", error);
+                finalVideoInQueue = null;
+            }
+
+            if (finalVideoInQueue) {
+                const newElementBefore = document.createElement('div');
+                newElementBefore.textContent = "This video was added to the queue to facilitate a queue refresh. YouTube won't allow us to remove it automatically, but you can";
+                const styles = {
+                    color: 'red',
+                    fontWeight: 'bold',
+                    fontSize: '16px',
+                    marginBottom: '10px',
+                }
+                for (const property in styles) {
+                    newElementBefore.style[property] = styles[property];
+                }
+                finalVideoInQueue.before(newElementBefore);
+                         await timeoutHack(500); // wait a tick
+                finalVideoInQueue.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+            else {
+                console.debug("No pre-existing queue found, creating a new one");
+
+                createInitialQueuePlaylist().then((newQueueId) => {
+                    console.debug("New queue ID created:", newQueueId);
+                    fetch("https://www.youtube.com/youtubei/v1/browse/edit_playlist?prettyPrint=false", {
+                        "headers": {
+                            "accept": "*/*",
+                            "cache-control": "no-cache",
+                            "content-type": "application/json",
+                            "pragma": "no-cache",
+                            "priority": "u=1, i",
+                            "sec-fetch-mode": "same-origin",
+                            "sec-fetch-site": "same-origin",
+                            "x-goog-authuser": "1",
+                            "x-goog-visitor-id": googVisitorId,
+                            "x-origin": "https://www.youtube.com",
+                            "x-youtube-client-version": request.clientVersion || "2.20250803.10.00",
+                        },
+                        "referrer": "https://www.youtube.com",
+                        "referrerPolicy": "origin-when-cross-origin",
+                        "body": JSON.stringify({
+                            "context": {
+                                //will want to replace every part of this client object with the actual values where possible
+                                "client": {
+                                    "hl": hl,
+                                    "gl": gl,
+                                    "clientName": "WEB",
+                                    "clientVersion": request.clientVersion || "2.20250803.10.00", // hard required
+                                    "originalUrl": "https://www.youtube.com/watch?v=g_NrnWD9wVw",
+                                    "acceptHeader": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                                },
+                                "user": {
+                                    "lockedSafetyMode": false
+                                },
+                                "request": {
+                                    "useSsl": true
+                                }
+                            },
+                            "actions":
+                                [...new Set(request.videos)].map(videoId => ({
+                                    "addedVideoId": videoId,
+                                    "action": "ACTION_ADD_VIDEO"
+                                }))
+                            ,
+                            "playlistId": newQueueId
+                        }),
+                        "method": "POST",
+                        "mode": "cors",
+                        "credentials": "include"
+                    }).then(async (_) => {
+                        if (finalVideoInQueue) {
+                            finalVideoInQueue.click()
+                            await timeoutHack(3000);
+                            const removeFromPlaylistBtn = await waitForElement('ytd-menu-service-item-renderer[role="menuitem"]:nth-of-type(3)', false, 6000);
+                            console.debug("Remove from playlist button found:", removeFromPlaylistBtn);
+                            if (removeFromPlaylistBtn) {
+                                await timeoutHack(1500);
+                                removeFromPlaylistBtn.click();
+                            } else {
+                                console.warn("Could not locate the 'Remove from playlist' button. Performing a hard refresh");
+                                window.location.reload();
+                            }
+                        } else {
+                            console.error("Second video in queue 3-dot element not found.");
+                        }
+                    }
+                    ).catch((error) => {
+                        console.error("Error creating playlist:", error);
+                    }).finally(() => {
+                        console.log("Resetting volatile variables after processing request");
+                        finalVideoInQueue = null;
+
+                    });
+                }).catch((error) => {
+                    console.error("Error creating queue:", error);
+                    sendResponse({ status: "error", message: error.message });
+                })
+            }
+        }
+        else {
+            console.error("Unknown action received in content script:", request.action);
+        }
     }
 });
