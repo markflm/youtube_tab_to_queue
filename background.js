@@ -19,7 +19,7 @@ chrome.action.onClicked.addListener(async (activeTab) => {
       });
     }
 
-    const tabIdsToRemove = otherYoutubeTabs.map(tab => tab.id);
-    await chrome.tabs.remove(tabIdsToRemove);
+    // const tabIdsToRemove = otherYoutubeTabs.map(tab => tab.id);
+    // await chrome.tabs.remove(tabIdsToRemove);
   }
 });
