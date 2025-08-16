@@ -285,14 +285,14 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
                     newElementBefore.style[property] = styles[property];
                 }
                 finalVideoInQueue.before(newElementBefore);
-                         await timeoutHack(500); // wait a tick
+                await timeoutHack(500); // wait a tick
                 finalVideoInQueue.scrollIntoView({ behavior: "smooth", block: "center" });
             }
         }
-            else {
-                console.debug("No pre-existing queue found, creating a new one");
+        else {
+            console.debug("No pre-existing queue found, creating a new one");
 
-            // Step 1: Find and click the more actions button
+            // Step 1: Find and click the more actions button for the first video in the recs section
             const moreActionsButton = await waitForElement(`
                 yt-lockup-metadata-view-model button[aria-label="More actions"],
                 yt-lockup-metadata-view-model button.yt-spec-button-shape-next--icon-button[aria-label="More actions"],
@@ -338,15 +338,21 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
                 console.error("Error finding final video in queue:", error);
                 finalVideoInQueue = null;
             }
+
+            //make call to add other tabs to new playlist
+            //todo - shouldn't timeoutHack here, instead wait for the request to complete
             await makeEditCall(playlistId, request.videos, request).catch((error) => {
                 console.error("Error adding videos to existing queue:", error);
             });
-await timeoutHack(2500); // wait a bit for edit playlist request to process in the background
 
-window.location.reload();
+            await timeoutHack(2500); // wait a bit for edit playlist request to process in the background
+
             if (finalVideoInQueue) {
+                //throw some element into the DOM to better locate the final video for removal. may not be necessary
                 const newElementBefore = document.createElement('div');
-                newElementBefore.textContent = "This video was added to the queue to facilitate a queue refresh. YouTube won't allow us to remove it automatically, but you can";
+                newElementBefore.textContent = "YTT2P TARGET VIDEO";
+                newElementBefore.setAttribute('data-ytt2p-marker', 'true'); // Add a unique identifier
+
                 const styles = {
                     color: 'red',
                     fontWeight: 'bold',
@@ -357,13 +363,36 @@ window.location.reload();
                     newElementBefore.style[property] = styles[property];
                 }
                 finalVideoInQueue.before(newElementBefore);
-                         await timeoutHack(500); // wait a tick
-                finalVideoInQueue.scrollIntoView({ behavior: "smooth", block: "center" });
+
+                const button = document.evaluate("/html/body/ytd-app/div[1]/ytd-page-manager/ytd-watch-flexy/div[5]/div[2]/div/ytd-playlist-panel-renderer/div/div[3]/ytd-playlist-panel-video-renderer[last()]/div/ytd-menu-renderer/yt-icon-button/button", document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null)?.singleNodeValue
+                if (button) {
+                    console.debug("Button after marker found:", button);
+                    button.click();
+                    await timeoutHack(250); // wait a bit for the menu to open
+                    const removeFromPlaylistNode = document.evaluate(
+                        '/html/body/ytd-app/ytd-popup-container/tp-yt-iron-dropdown[last()]/div/ytd-menu-popup-renderer/tp-yt-paper-listbox/ytd-menu-service-item-renderer[3]',
+                        document,
+                        null,
+                        XPathResult.FIRST_ORDERED_NODE_TYPE,
+                        null
+                    )?.singleNodeValue;
+
+                    if (removeFromPlaylistNode) {
+                        console.debug("Remove from playlist node found:", removeFromPlaylistNode);
+                        removeFromPlaylistNode?.click();
+                        console.debug("Clicked removed from playlist button");
+                    }
+                } else {
+                    console.warn("Button after marker not found");
+                }
             }
-            }
-        }
-        else {
-            console.error("Unknown action received in content script:", request.action);
         }
     }
+    else {
+        console.error("Unknown action received in content script:", request.action);
+    }
+}
 );
