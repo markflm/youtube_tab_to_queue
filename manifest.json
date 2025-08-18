@@ -3,7 +3,7 @@
   "name": "YouTube Tabs2Queue",
   "version": "1.0",
   "description": "Collapses all open YouTube tabs into a single queue.",
-  "permissions": ["tabs"],
+  "permissions": ["tabs", "storage"],
   "background": {
     "service_worker": "background.js"
   },

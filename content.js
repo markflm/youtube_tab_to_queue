@@ -27,6 +27,18 @@ window.addEventListener("pageValues", function (event) {
     }
 });
 
+chrome.storage.local.get(['ytt2p_playerTime'], (result) => {
+    console.log("Retrieved player time from storage:", result);
+    if (result.ytt2p_playerTime) {
+        // video time for current video exists from an existing playlist refresh
+        currentTime = result.ytt2p_playerTime;
+        //localStorage.removeItem('ytt2p_playerTime'); // clear it after use
+        console.debug("Setting video time to:", currentTime);
+        document.querySelector("video").currentTime = currentTime;
+     
+    }
+       chrome.storage.local.remove('ytt2p_playerTime'); // clear it after use
+});
 
 
 async function timeoutHack(ms = 1000) {
@@ -207,6 +219,117 @@ async function makeEditCall(playlistId, videoIds, request) {
     })
 }
 
+async function existingPlaylistFlow(playlistId, videoIds, request) {
+    console.debug("Pre-existing queue detected - getting queue ID");
+    const queueVideoElement = await waitForElement(`
+                a#wc-endpoint[href]
+            `.trim(), false, 5000);
+
+    if (!queueVideoElement?.href) {
+        throw new Error("Queue video element not found or does not have a valid href.");
+    }
+    playlistId = getListId(queueVideoElement.href);
+    const currentTime = document.querySelector("video").currentTime;
+    console.debug("currentTime:", currentTime);
+    await makeEditCall(playlistId, request.videos, request).catch((error) => {
+        console.error("Error adding videos to existing queue:", error);
+    });
+
+    chrome.runtime.sendMessage({
+        action: 'ytt2p_playerTime',
+        value: currentTime
+    });
+    window.location.reload(); // reload the page to update the queue
+
+
+}
+async function newPlaylistFlow(videoIds, request) {
+    console.debug("No pre-existing queue found, creating a new one");
+
+    // Step 1: Find and click the more actions button for the first video in the recs section
+    const moreActionsButton = await waitForElement(`
+                yt-lockup-metadata-view-model button[aria-label="More actions"],
+                yt-lockup-metadata-view-model button.yt-spec-button-shape-next--icon-button[aria-label="More actions"],
+                yt-lockup-metadata-view-model button[aria-label="More actions"][class*="yt-spec-button-shape-next"]
+            `.trim());
+
+    moreActionsButton.click();
+
+
+    // Step 2: Wait for menu to appear and click "Add to queue"
+    const addToQueueButton = await waitForElement(`
+[role="menuitem"][tabindex="0"]
+            `.trim(), false, 3000);
+    console.debug("Add to Queue button found:", addToQueueButton);
+    addToQueueButton.click();
+    console.debug("3 second timeout hack")
+    await timeoutHack(3000); // wait a bit to ensure the added video has appeared
+
+    // get the playlist ID from the queue video element
+    const queueVideoElement = await waitForElement(`
+                a#wc-endpoint[href]
+            `.trim(), false, 5000);
+
+    if (!queueVideoElement?.href) {
+        throw new Error("Queue video element not found or does not have a valid href.");
+    }
+    const playlistId = getListId(queueVideoElement.href);
+
+    try {
+        // maybe more brittle than the css selector but w/e
+        const xpath = "/html/body/ytd-app/div[1]/ytd-page-manager/ytd-watch-flexy/div[5]/div[2]/div/ytd-playlist-panel-renderer/div/div[3]/ytd-playlist-panel-video-renderer[last()]";
+        const result = document.evaluate(
+            xpath,
+            document,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null
+        );
+        finalVideoInQueue = result.singleNodeValue;
+        console.log("Final video in queue found:", finalVideoInQueue);
+    }
+    catch (error) {
+        console.error("Error finding final video in queue:", error);
+        finalVideoInQueue = null;
+    }
+
+    //make call to add other tabs to new playlist
+    //todo - shouldn't timeoutHack here, instead wait for the request to complete
+    await makeEditCall(playlistId, videoIds, request).catch((error) => {
+        console.error("Error adding videos to existing queue:", error);
+    });
+
+    await timeoutHack(2500); // wait a bit for edit playlist request to process in the background
+
+    if (finalVideoInQueue) {
+
+        const button = document.evaluate("/html/body/ytd-app/div[1]/ytd-page-manager/ytd-watch-flexy/div[5]/div[2]/div/ytd-playlist-panel-renderer/div/div[3]/ytd-playlist-panel-video-renderer[last()]/div/ytd-menu-renderer/yt-icon-button/button", document,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null)?.singleNodeValue
+        if (button) {
+            console.debug("Button after marker found:", button);
+            button.click();
+            await timeoutHack(250); // wait a bit for the menu to open
+            const removeFromPlaylistNode = document.evaluate(
+                '/html/body/ytd-app/ytd-popup-container/tp-yt-iron-dropdown[last()]/div/ytd-menu-popup-renderer/tp-yt-paper-listbox/ytd-menu-service-item-renderer[3]',
+                document,
+                null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                null
+            )?.singleNodeValue;
+
+            if (removeFromPlaylistNode) {
+                console.debug("Remove from playlist node found:", removeFromPlaylistNode);
+                removeFromPlaylistNode?.click();
+                console.debug("Clicked removed from playlist button");
+            }
+        } else {
+            console.warn("Button after marker not found");
+        }
+    }
+}
+
 
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     if (request.action === "addToQueue") {
@@ -222,177 +345,14 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
         console.debug("Queue video elements found:", originalQueueVideoElements);
 
         if (originalQueueVideoElements.length >= 1) {
-            console.debug("Pre-existing queue detected - getting queue ID");
-            const queueVideoElement = await waitForElement(`
-                a#wc-endpoint[href]
-            `.trim(), false, 5000);
-
-            if (!queueVideoElement?.href) {
-                throw new Error("Queue video element not found or does not have a valid href.");
-            }
-            playlistId = getListId(queueVideoElement.href);
-            await makeEditCall(playlistId, request.videos, request).catch((error) => {
-                console.error("Error adding videos to existing queue:", error);
-            });
-
-            // Step 1: Find and click the more actions button
-            const moreActionsButton = await waitForElement(`
-                yt-lockup-metadata-view-model button[aria-label="More actions"],
-                yt-lockup-metadata-view-model button.yt-spec-button-shape-next--icon-button[aria-label="More actions"],
-                yt-lockup-metadata-view-model button[aria-label="More actions"][class*="yt-spec-button-shape-next"]
-            `.trim());
-
-            moreActionsButton.click();
-
-
-            // Step 2: Wait for menu to appear and click "Add to queue"
-            const addToQueueButton = await waitForElement(`
-[role="menuitem"][tabindex="0"]
-            `.trim(), false, 3000);
-            console.debug("Add to Queue button found:", addToQueueButton);
-            addToQueueButton.click();
-            console.debug("3 second timeout hack")
-            await timeoutHack(3000); // wait a bit to ensure the added video has appeared
-
-            try {
-                // maybe more brittle than the css selector but w/e
-                const xpath = "/html/body/ytd-app/div[1]/ytd-page-manager/ytd-watch-flexy/div[5]/div[2]/div/ytd-playlist-panel-renderer/div/div[3]/ytd-playlist-panel-video-renderer[last()]";
-                const result = document.evaluate(
-                    xpath,
-                    document,
-                    null,
-                    XPathResult.FIRST_ORDERED_NODE_TYPE,
-                    null
-                );
-                finalVideoInQueue = result.singleNodeValue;
-                console.log("Final video in queue found:", finalVideoInQueue);
-            }
-            catch (error) {
-                console.error("Error finding final video in queue:", error);
-                finalVideoInQueue = null;
-            }
-
-            if (finalVideoInQueue) {
-                const newElementBefore = document.createElement('div');
-                newElementBefore.textContent = "This video was added to the queue to facilitate a queue refresh. YouTube won't allow us to remove it automatically, but you can";
-                const styles = {
-                    color: 'red',
-                    fontWeight: 'bold',
-                    fontSize: '16px',
-                    marginBottom: '10px',
-                }
-                for (const property in styles) {
-                    newElementBefore.style[property] = styles[property];
-                }
-                finalVideoInQueue.before(newElementBefore);
-                await timeoutHack(500); // wait a tick
-                finalVideoInQueue.scrollIntoView({ behavior: "smooth", block: "center" });
-            }
+            await existingPlaylistFlow(playlistId, request.videos, request);
         }
         else {
-            console.debug("No pre-existing queue found, creating a new one");
+            await newPlaylistFlow(request.videos, request);
 
-            // Step 1: Find and click the more actions button for the first video in the recs section
-            const moreActionsButton = await waitForElement(`
-                yt-lockup-metadata-view-model button[aria-label="More actions"],
-                yt-lockup-metadata-view-model button.yt-spec-button-shape-next--icon-button[aria-label="More actions"],
-                yt-lockup-metadata-view-model button[aria-label="More actions"][class*="yt-spec-button-shape-next"]
-            `.trim());
-
-            moreActionsButton.click();
-
-
-            // Step 2: Wait for menu to appear and click "Add to queue"
-            const addToQueueButton = await waitForElement(`
-[role="menuitem"][tabindex="0"]
-            `.trim(), false, 3000);
-            console.debug("Add to Queue button found:", addToQueueButton);
-            addToQueueButton.click();
-            console.debug("3 second timeout hack")
-            await timeoutHack(3000); // wait a bit to ensure the added video has appeared
-
-            // get the playlist ID from the queue video element
-            const queueVideoElement = await waitForElement(`
-                a#wc-endpoint[href]
-            `.trim(), false, 5000);
-
-            if (!queueVideoElement?.href) {
-                throw new Error("Queue video element not found or does not have a valid href.");
-            }
-            playlistId = getListId(queueVideoElement.href);
-
-            try {
-                // maybe more brittle than the css selector but w/e
-                const xpath = "/html/body/ytd-app/div[1]/ytd-page-manager/ytd-watch-flexy/div[5]/div[2]/div/ytd-playlist-panel-renderer/div/div[3]/ytd-playlist-panel-video-renderer[last()]";
-                const result = document.evaluate(
-                    xpath,
-                    document,
-                    null,
-                    XPathResult.FIRST_ORDERED_NODE_TYPE,
-                    null
-                );
-                finalVideoInQueue = result.singleNodeValue;
-                console.log("Final video in queue found:", finalVideoInQueue);
-            }
-            catch (error) {
-                console.error("Error finding final video in queue:", error);
-                finalVideoInQueue = null;
-            }
-
-            //make call to add other tabs to new playlist
-            //todo - shouldn't timeoutHack here, instead wait for the request to complete
-            await makeEditCall(playlistId, request.videos, request).catch((error) => {
-                console.error("Error adding videos to existing queue:", error);
-            });
-
-            await timeoutHack(2500); // wait a bit for edit playlist request to process in the background
-
-            if (finalVideoInQueue) {
-                //throw some element into the DOM to better locate the final video for removal. may not be necessary
-                const newElementBefore = document.createElement('div');
-                newElementBefore.textContent = "YTT2P TARGET VIDEO";
-                newElementBefore.setAttribute('data-ytt2p-marker', 'true'); // Add a unique identifier
-
-                const styles = {
-                    color: 'red',
-                    fontWeight: 'bold',
-                    fontSize: '16px',
-                    marginBottom: '10px',
-                }
-                for (const property in styles) {
-                    newElementBefore.style[property] = styles[property];
-                }
-                finalVideoInQueue.before(newElementBefore);
-
-                const button = document.evaluate("/html/body/ytd-app/div[1]/ytd-page-manager/ytd-watch-flexy/div[5]/div[2]/div/ytd-playlist-panel-renderer/div/div[3]/ytd-playlist-panel-video-renderer[last()]/div/ytd-menu-renderer/yt-icon-button/button", document,
-                    null,
-                    XPathResult.FIRST_ORDERED_NODE_TYPE,
-                    null)?.singleNodeValue
-                if (button) {
-                    console.debug("Button after marker found:", button);
-                    button.click();
-                    await timeoutHack(250); // wait a bit for the menu to open
-                    const removeFromPlaylistNode = document.evaluate(
-                        '/html/body/ytd-app/ytd-popup-container/tp-yt-iron-dropdown[last()]/div/ytd-menu-popup-renderer/tp-yt-paper-listbox/ytd-menu-service-item-renderer[3]',
-                        document,
-                        null,
-                        XPathResult.FIRST_ORDERED_NODE_TYPE,
-                        null
-                    )?.singleNodeValue;
-
-                    if (removeFromPlaylistNode) {
-                        console.debug("Remove from playlist node found:", removeFromPlaylistNode);
-                        removeFromPlaylistNode?.click();
-                        console.debug("Clicked removed from playlist button");
-                    }
-                } else {
-                    console.warn("Button after marker not found");
-                }
-            }
         }
     }
     else {
         console.error("Unknown action received in content script:", request.action);
     }
-}
-);
+})

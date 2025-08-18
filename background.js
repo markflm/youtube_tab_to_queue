@@ -19,7 +19,14 @@ chrome.action.onClicked.addListener(async (activeTab) => {
       });
     }
 
-    // const tabIdsToRemove = otherYoutubeTabs.map(tab => tab.id);
-    // await chrome.tabs.remove(tabIdsToRemove);
+    const tabIdsToRemove = otherYoutubeTabs.map(tab => tab.id);
+    await chrome.tabs.remove(tabIdsToRemove);
+  }
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'ytt2p_playerTime') {
+    // put it in the extension's storage to reference when content script reloads
+    chrome.storage.local.set({ 'ytt2p_playerTime': message.value });
   }
 });
