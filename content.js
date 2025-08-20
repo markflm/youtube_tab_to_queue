@@ -1,3 +1,4 @@
+const videoInQueueSelector = 'a#wc-endpoint[href]';
 function injectScript(file_path, tag) {
     var node = document.getElementsByTagName(tag)[0];
     var script = document.createElement('script');
@@ -336,9 +337,7 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
         let playlistId = null;
         //do we have a valid queue already?
         //Step 0: check if a queue already exists
-        const originalQueueVideoElements = await waitForElement(`
-                a#wc-endpoint[href]
-            `.trim(), true, 1000).catch((error) => {
+        const originalQueueVideoElements = await waitForElement(videoInQueueSelector.trim(), true, 1000).catch((error) => {
             console.warn("No existing queue found");
             return [];
         });

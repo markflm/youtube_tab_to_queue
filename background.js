@@ -11,16 +11,20 @@ chrome.action.onClicked.addListener(async (activeTab) => {
       const url = new URL(tab.url);
       return url.searchParams.get("v");
     }).filter(id => id); // filter out any tabs without a video ID
-
+console.log("Other youtube tabs found:", otherYoutubeTabs);
+ for (const inactive of otherYoutubeTabs) {
+  console.log(`Injecting content script into tab ${inactive.id}`);
+      await injectContentScript(inactive.id);
+    }
     if (videoIds.length > 0) {
-      await chrome.tabs.sendMessage(activeYoutubeTab.id, {
-        action: "addToQueue",
-        videos: videoIds
-      });
+      // await chrome.tabs.sendMessage(activeYoutubeTab.id, {
+      //   action: "addToQueue",
+      //   videos: videoIds
+      // });
     }
 
-    const tabIdsToRemove = otherYoutubeTabs.map(tab => tab.id);
-    await chrome.tabs.remove(tabIdsToRemove);
+    // const tabIdsToRemove = otherYoutubeTabs.map(tab => tab.id);
+    // await chrome.tabs.remove(tabIdsToRemove);
   }
 });
 
@@ -30,3 +34,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.storage.local.set({ 'ytt2p_playerTime': message.value });
   }
 });
+
+
+async function injectContentScript(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: ['inactiveTabInjected.js']
+    });
+    console.log(`Content script injected into tab ${tabId}`);
+  } catch (error) {
+    console.error(`Failed to inject content script into tab ${tabId}:`, error);
+  }
+}
